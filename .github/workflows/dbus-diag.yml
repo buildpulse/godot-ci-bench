@@ -1,0 +1,22 @@
+# Why does godot's sanitizer editor test leak 1 KB in libdbus on BuildPulse
+# but not on GitHub? Compare the D-Bus environment on both runners.
+name: dbus-diag
+on: [workflow_dispatch]
+jobs:
+  diag:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, bp-ubuntu-latest-x64-4x]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - run: |
+          echo "== env"; env | grep -iE 'dbus|xdg|display' || echo "(no DBUS/XDG/DISPLAY vars)"
+          echo "== binaries"; for b in dbus-daemon dbus-launch dbus-run-session xvfb-run; do printf '%s: ' $b; command -v $b || echo missing; done
+          echo "== packages"; dpkg -l | awk '/dbus|libdbus/{print $2, $3}'
+          echo "== system bus"; ls -la /run/dbus/ 2>&1 || true; ls -la /var/run/dbus/ 2>&1 || true
+          echo "== machine-id"; ls -la /etc/machine-id /var/lib/dbus/machine-id 2>&1 || true
+          echo "== pid1"; ps -o comm= -p 1 || true
+          echo "== session bus autolaunch under xvfb"; sudo apt-get update -qq >/dev/null 2>&1 || true
+          xvfb-run sh -c 'echo DISPLAY=$DISPLAY; dbus-send --session --print-reply --dest=org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus.ListNames 2>&1 | head -3' || true
+          echo "== system bus reachable"; dbus-send --system --print-reply --dest=org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus.ListNames 2>&1 | head -3 || true
